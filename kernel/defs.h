@@ -107,6 +107,7 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 uint64          getnproc(void);     // lab2-2
 pagetable_t     proc_kpagetable(struct proc *p);
+void            proc_freekpagetable(pagetable_t kpagetable);
 
 // swtch.S
 void            swtch(struct context*, struct context*);

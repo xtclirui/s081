@@ -168,8 +168,19 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  // free kernel stack - lab3-2
+  if(p->kstack) {
+    uvmunmap(p->kpagetable, p->kstack, 1, 1);
+  }
+  p->kstack = 0;
+  // free kernel page table without freeing physical memory - lab3-2
+  if(p->kpagetable){
+    proc_freekpagetable(p->kpagetable);
+  }
+  p->kpagetable=0;
   p->state = UNUSED;
 }
+
 
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
@@ -493,9 +504,15 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        // load the process's kernel page table - lab3-2
+        w_satp(MAKE_SATP(p->kpagetable));
+        // flush the TLB - lab3-2
+        sfence_vma();
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
+        // use kernel_pagetable when no process is running - lab3-2
+//        kvminithart();
         // It should have changed its p->state before coming back.
         c->proc = 0;
 
@@ -504,11 +521,19 @@ scheduler(void)
       release(&p->lock);
     }
     if(found == 0) {
+        kvminithart();
+    }
+#if !defined (LAB_FS)
+    if(found == 0) {
       intr_on();
       asm volatile("wfi");
     }
+#else
+    ;
+#endif
   }
 }
+
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
@@ -746,3 +771,21 @@ proc_kpagetable(struct proc *p) {
 
     return kpagetable;
 }
+
+// free kernel page table without freeing physical memory - lab3-2
+void proc_freekpagetable(pagetable_t kpagetable) {
+    for(int i = 0; i < 512; i++){
+        pte_t pte = kpagetable[i];
+        if((pte & PTE_V)){
+            kpagetable[i] = 0;    // 对于有效的PTE都清零
+            // 递归清除
+            if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+                uint64 child = PTE2PA(pte);
+                proc_freekpagetable((pagetable_t)child);
+            }
+        }
+    }
+    kfree((void*)kpagetable);
+}
+
+

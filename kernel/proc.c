@@ -30,16 +30,16 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+      // lab3-2
+      // // Allocate a page for the process's kernel stack.
+      // // Map it high in memory, followed by an invalid
+      // // guard page.
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // uint64 va = KSTACK((int) (p - proc));
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // p->kstack = va;
   }
   kvminithart();
 }
@@ -121,14 +121,31 @@ found:
     return 0;
   }
 
+  // process's kernel page table - lab3-2
+  p->kpagetable = proc_kpagetable(p);
+  if (p->kpagetable == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  // Allocate a page for the process's kernel stack. - lab3-2
+  char *pa = kalloc();    // 分配页面
+  if(pa == 0) {
+    panic("kalloc");
+  }
+  uint64 va = KSTACK(0);
+  // 进行虚拟地址和物理地址的映射
+  uvmmap(p->kpagetable,va, (uint64)pa,PGSIZE,PTE_R | PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
   return p;
 }
+
 
 // free a proc structure and the data hanging from it,
 // including user pages.
@@ -706,4 +723,24 @@ uint64 getnproc(void) {
         }
     }
     return n;
+}
+
+// create a kernel page table for the given process - lab3-2
+pagetable_t 
+proc_kpagetable(struct proc *p) {
+    // 创建空页表
+    pagetable_t kpagetable = uvmcreate();
+    if(kpagetable == 0){
+        return 0;
+    }
+
+    uvmmap(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+    uvmmap(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+    uvmmap(kpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+    uvmmap(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+    uvmmap(kpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+    uvmmap(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+    uvmmap(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);    // 注意va为TRAMPOLINE
+
+    return kpagetable;
 }

@@ -470,3 +470,10 @@ void vmprint(pagetable_t pagetable) {
     printf("page table %p\n", pagetable);
     vmprint_(pagetable,1);
 }
+
+void uvmmap(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm) {
+    if(mappages(pagetable, va, sz, pa, perm) != 0) {
+        panic("uvmmap");
+    }
+}
+

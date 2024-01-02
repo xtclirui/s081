@@ -106,6 +106,7 @@ int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 uint64          getnproc(void);     // lab2-2
+pagetable_t     proc_kpagetable(struct proc *p);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -174,6 +175,7 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            vmprint(pagetable_t pagetable);
+void            uvmmap(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm);
 
 // plic.c
 void            plicinit(void);

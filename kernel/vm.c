@@ -126,7 +126,7 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 // addresses on the stack.
 // assumes va is page aligned.
 uint64
-kvmpa(uint64 va)
+kvmpa(pagetable_t kernel_pagetable, uint64 va)
 {
   uint64 off = va % PGSIZE;
   pte_t *pte;

@@ -772,20 +772,30 @@ proc_kpagetable(struct proc *p) {
     return kpagetable;
 }
 
+// // free kernel page table without freeing physical memory - lab3-2
+// void proc_freekpagetable(pagetable_t kpagetable) {
+//     for(int i = 0; i < 512; i++){
+//         pte_t pte = kpagetable[i];
+//         if((pte & PTE_V)){
+//             kpagetable[i] = 0;    // 对于有效的PTE都清零
+//             // 递归清除
+//             if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+//                 uint64 child = PTE2PA(pte);
+//                 proc_freekpagetable((pagetable_t)child);
+//             }
+//         }
+//     }
+//     kfree((void*)kpagetable);
+// }
+
 // free kernel page table without freeing physical memory - lab3-2
 void proc_freekpagetable(pagetable_t kpagetable) {
-    for(int i = 0; i < 512; i++){
-        pte_t pte = kpagetable[i];
-        if((pte & PTE_V)){
-            kpagetable[i] = 0;    // 对于有效的PTE都清零
-            // 递归清除
-            if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
-                uint64 child = PTE2PA(pte);
-                proc_freekpagetable((pagetable_t)child);
-            }
-        }
-    }
-    kfree((void*)kpagetable);
+    uvmunmap(kpagetable, UART0, 1, 0);
+    uvmunmap(kpagetable, VIRTIO0, 1, 0);
+    uvmunmap(kpagetable, CLINT, 0x10000 / PGSIZE, 0);
+    uvmunmap(kpagetable, PLIC, 0x400000 / PGSIZE, 0);
+    uvmunmap(kpagetable, KERNBASE, (PHYSTOP - KERNBASE) / PGSIZE, 0);
+    uvmunmap(kpagetable, TRAMPOLINE, 1, 0);
+    uvmfree(kpagetable, 0);
 }
-
 

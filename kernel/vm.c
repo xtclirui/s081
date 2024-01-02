@@ -459,7 +459,7 @@ void vmprint_(pagetable_t pagetable, int level) {
             pagetable_t child = (pagetable_t) PTE2PA(pte);
             // 判断是否不为最低级页目录
             if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
-                vmprinthelper(child, level + 1);
+                vmprint_(child, level + 1);
             }
         }
     }

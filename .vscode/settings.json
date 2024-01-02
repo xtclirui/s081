@@ -1,6 +1,7 @@
 {
     "C_Cpp.errorSquiggles": "disabled",
     "files.associations": {
-        "buf.h": "c"
+        "buf.h": "c",
+        "spinlock.h": "c"
     }
 }

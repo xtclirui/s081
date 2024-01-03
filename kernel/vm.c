@@ -488,7 +488,7 @@ int u2kvmcopy(pagetable_t upagetable, pagetable_t kpagetable, uint64 begin, uint
   uint flags;
   uint64 begin_page = PGROUNDUP(begin);
   for(i = begin_page; i < end; i += PGSIZE){
-    if((pet == walk(upagetable, i, 0)) == 0){
+    if((pte == walk(upagetable, i, 0)) == 0){
       panic("uvmcopy2kvm: pte should exit");
     }
     if((*pte & PTE_V) == 0){

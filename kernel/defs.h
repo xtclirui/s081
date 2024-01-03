@@ -195,5 +195,6 @@ void            virtio_disk_intr(void);
 
 // vmcopyin.c
 int             copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
-int             copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
+int             copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
+
 

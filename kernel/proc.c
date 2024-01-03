@@ -21,6 +21,8 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+extern char etext[]; 
+
 // initialize the proc table at boot time.
 void
 procinit(void)
@@ -30,16 +32,16 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+      // lab3-2
+      // // Allocate a page for the process's kernel stack.
+      // // Map it high in memory, followed by an invalid
+      // // guard page.
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // uint64 va = KSTACK((int) (p - proc));
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // p->kstack = va;
   }
   kvminithart();
 }
@@ -121,14 +123,31 @@ found:
     return 0;
   }
 
+  // process's kernel page table - lab3-2
+  p->kpagetable = proc_kpagetable(p);
+  if (p->kpagetable == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  // Allocate a page for the process's kernel stack. - lab3-2
+  char *pa = kalloc();    // 分配页面
+  if(pa == 0) {
+    panic("kalloc");
+  }
+  uint64 va = KSTACK(0);
+  // 进行虚拟地址和物理地址的映射
+  uvmmap(p->kpagetable,va, (uint64)pa,PGSIZE,PTE_R | PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
   return p;
 }
+
 
 // free a proc structure and the data hanging from it,
 // including user pages.
@@ -149,8 +168,19 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  // free kernel stack - lab3-2
+  if(p->kstack) {
+    uvmunmap(p->kpagetable, p->kstack, 1, 1);
+  }
+  p->kstack = 0;
+  // free kernel page table without freeing physical memory - lab3-2
+  if(p->kpagetable){
+    proc_freekpagetable(p->kpagetable);
+  }
+  p->kpagetable=0;
   p->state = UNUSED;
 }
+
 
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
@@ -221,6 +251,9 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  // init kernel pagetable - lab3-3
+  u2kvmcopy(p->pagetable, p->kpagetable, 0, p->sz);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -243,11 +276,27 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    // prevent process from growing to PLIC address - lab3-3
+    if(sz + n > PLIC){
+      return -1;
+    }
+
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+
+    // copy the increase user page table to kernel page table - lab3-3
+    if(u2kvmcopy(p->pagetable, p->kpagetable, p->sz, sz) < 0){
+      return -1;
+    }
+
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    // free process's kernel page table without free physical memory - lab3-3
+    if(PGROUNDUP(sz) < PGROUNDUP(p->sz)){
+      uvmunmap(p->kpagetable, PGROUNDUP(sz), (PGROUNDUP(p->sz) - PGROUNDUP(sz)) / PGSIZE, 0);
+    }
+
   }
   p->sz = sz;
   return 0;
@@ -275,6 +324,13 @@ fork(void)
   }
   np->sz = p->sz;
   np->mask = p->mask;   //cp trace mask from parent to child - lab2-1
+
+  // copy user page table to kernel page table - lab3-3
+  if(u2kvmcopy(np->pagetable, np->kpagetable, 0, np->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
 
   np->parent = p;
 
@@ -474,9 +530,15 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        // load the process's kernel page table - lab3-2
+        w_satp(MAKE_SATP(p->kpagetable));
+        // flush the TLB - lab3-2
+        sfence_vma();
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
+        // use kernel_pagetable when no process is running - lab3-2
+//        kvminithart();
         // It should have changed its p->state before coming back.
         c->proc = 0;
 
@@ -485,11 +547,19 @@ scheduler(void)
       release(&p->lock);
     }
     if(found == 0) {
+        kvminithart();
+    }
+#if !defined (LAB_FS)
+    if(found == 0) {
       intr_on();
       asm volatile("wfi");
     }
+#else
+    ;
+#endif
   }
 }
+
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
@@ -707,3 +777,51 @@ uint64 getnproc(void) {
     }
     return n;
 }
+
+// create a kernel page table for the given process - lab3-2
+pagetable_t 
+proc_kpagetable(struct proc *p) {
+    // 创建空页表
+    pagetable_t kpagetable = uvmcreate();
+    if(kpagetable == 0){
+        return 0;
+    }
+
+    uvmmap(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+    uvmmap(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+    uvmmap(kpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+    uvmmap(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+    uvmmap(kpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+    uvmmap(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+    uvmmap(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);    // 注意va为TRAMPOLINE
+
+    return kpagetable;
+}
+
+// // free kernel page table without freeing physical memory - lab3-2
+// void proc_freekpagetable(pagetable_t kpagetable) {
+//     for(int i = 0; i < 512; i++){
+//         pte_t pte = kpagetable[i];
+//         if((pte & PTE_V)){
+//             kpagetable[i] = 0;    // 对于有效的PTE都清零
+//             // 递归清除
+//             if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+//                 uint64 child = PTE2PA(pte);
+//                 proc_freekpagetable((pagetable_t)child);
+//             }
+//         }
+//     }
+//     kfree((void*)kpagetable);
+// }
+
+// free kernel page table without freeing physical memory - lab3-2
+void proc_freekpagetable(pagetable_t kpagetable) {
+    uvmunmap(kpagetable, UART0, 1, 0);
+    uvmunmap(kpagetable, VIRTIO0, 1, 0);
+    uvmunmap(kpagetable, CLINT, 0x10000 / PGSIZE, 0);
+    uvmunmap(kpagetable, PLIC, 0x400000 / PGSIZE, 0);
+    uvmunmap(kpagetable, KERNBASE, (PHYSTOP - KERNBASE) / PGSIZE, 0);
+    uvmunmap(kpagetable, TRAMPOLINE, 1, 0);
+    uvmfree(kpagetable, 0);
+}
+

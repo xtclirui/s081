@@ -117,7 +117,7 @@ exec(char *path, char **argv)
   proc_freepagetable(oldpagetable, oldsz);
 
   // unmap old kernel page table, and copy the new one - lab3-3
-  uvmunmap(k->kpagetable, 0, PGROUNDUP(oldsz) / PGSIZE, 0);
+  uvmunmap(p->kpagetable, 0, PGROUNDUP(oldsz) / PGSIZE, 0);
   if(u2kvmcopy(p->pagetable, p->kpagetable, 0, p->sz) < 0){
     goto bad;
   }

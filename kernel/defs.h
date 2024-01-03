@@ -193,7 +193,36 @@ void            virtio_disk_intr(void);
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
 
-// vmcopyin.c
+// stats.c
+void            statsinit(void);
+void            statsinc(void);
+
+// sprintf.c
+int             snprintf(char*, int, char*, ...);
+
+#ifdef LAB_NET
+// pci.c
+void            pci_init();
+
+// e1000.c
+void            e1000_init(uint32 *);
+void            e1000_intr(void);
+int             e1000_transmit(struct mbuf*);
+
+// net.c
+void            net_rx(struct mbuf*);
+void            net_tx_udp(struct mbuf*, uint32, uint16, uint16);
+
+// sysnet.c
+void            sockinit(void);
+int             sockalloc(struct file **, uint32, uint16, uint16);
+void            sockclose(struct sock *);
+int             sockread(struct sock *, uint64, int);
+int             sockwrite(struct sock *, uint64, int);
+void            sockrecvudp(struct mbuf*, uint32, uint16, uint16);
+#endif
+
+// vmcopyin.c - lab3-3
 int             copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
 int             copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
 
